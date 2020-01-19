@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+      CMD_NAME="pyy"
+   CMD_VERSION="0.9"
+   CMD_SUMMARY="helps you to create a virtual Python environment"
+CMD_REPOSITORY="https://github.com/webcitizen-de/pyy"
+
+unset pyEnvName pyEnvTrigger pyVersion
+
+function print_help {
+
+    echo
+    echo "Syntax: pyy [ [-?|--help] ] [ [PythonVersion] EnvName ]"
+    echo
+    echo "start the full questionnaire       :  pyy"
+    echo "state a environment name           :  pyy myTestEnv"
+    echo "state a Python Version & env. name :  pyy 3.7.2 myTestEnv"
+    echo
+}
+
+function print_header {
+    clear
+    echo
+    echo "$CMD_NAME v$CMD_VERSION: $CMD_SUMMARY"
+    echo "__________________________________________________________"
+    echo
+}
+
+case $1 in
+    -?|--help)
+        print_help
+        exit
+    ;;
+    *)
+        if [[ $# = 1 ]]; then pyEnvName=$1; fi
+        if [[ $# = 2 ]]; then pyVersion=$1; pyEnvName=$2; fi
+    ;;
+esac
+
+
+# we need to set the variable 'key' to something else than an empty string,
+# which shall represent a 'Enter' key stroke
+key="null" 
+function ask_to_proceed() {
+    
+    key="null"
+    while ! [[ $key == "y" || $key == "n" ]]; do
+
+        [[ $2 != "noHeader" ]] && print_header
+        echo "$1 (Y/n)"
+        read -p "--> " key
+        
+        if [[ $key == "" ]]; then
+            key="y"
+        else
+            key=$(echo "$key" | tr '[:upper:]' '[:lower:]')
+        fi
+    done
+}
+
+
+# SANTIY CHECK
+# We need to check this BEFORE invoking 'pyenv virtualenv' since it does not like 
+# to setup a new env while a trigger file already exits
+if [[ -f .python-version ]]; then
+    echo "Oops! In your working directory already exists a local trigger file."
+    echo "It contains: $(command cat $PWD/.python-version)"
+    echo
+    command rm -i $PWD/.python-version
+    [[ -f .python-version ]] && exit
+fi
+
+
+# CHOOSE PYTHON VERSION
+if [[ $pyVersion == "" ]]; then
+    
+    ask_to_proceed "Shall I use $(python -V) for this virtual environment?"
+    
+    if [[ $key == "n" ]]; then
+        while [[ $pyVersion == "" ]]; do
+            echo
+            echo "Ok. Currently there a following Python versions installed:"
+            command ls -F -1 $PYENV_ROOT/versions | command grep '/' | command tr -d '/'
+            echo
+            echo "Use 'pyenv install x.x.x' to install additional versions if needed."
+            echo
+            echo "Please enter a suitable Python version then (enter all digits):"
+            read -p "--> " pyVersion
+        done
+    fi
+fi
+
+
+# CHOOSE PYTHON ENVIRONMENT NAME
+echo "pyEnvName: $pyEnvName"
+while [[ $pyEnvName = "" ]]; do
+
+    ask_to_proceed "Do you want your working directory as env name?: \"$(basename $PWD)\"?"
+
+    if [[ $key == "y" || $key == "" ]]; then
+        pyEnvName=$(basename $(pwd))
+    else
+        while [[ $pyEnvName == "" ]]; do
+            print_header
+            echo "Please enter the name of the virtual environment:"
+            read -p "--> " pyEnvName
+        done
+    fi
+
+    env_names="$(command pyenv virtualenvs | command cut -d '/' -f 1 | command cut -d '(' -f 1)"
+
+    if [[ $env_names =~ $pyEnvName ]]; then
+        echo "Oops! An environment named \"$pyEnvName\" already exists!"; sleep 1.5
+        ask_to_proceed "Do you want me to remove it?"
+        [[ $key == "y" ]] && command pyenv uninstall -f $pyEnvName
+        pyEnvName=""
+    fi
+done
+
+
+# SETUP PYTHON ENVIRONMENT
+ask_to_proceed "Do you want a trigger for your working directoy \"$(basename $(pwd))\"?"
+
+if [[ $key == "y" || $key == "n" || $key == "" ]]; then
+    
+    if [[ $pyVersion == "" ]]; then
+        command pyenv virtualenv "$pyEnvName"
+    else
+        command pyenv virtualenv "$pyVersion" "$pyEnvName"
+    fi    
+    
+    if [[ $? == 0 ]]; then
+        echo -e "\nI successfully created a Python environment named \"$pyEnvName\" \
+            $([[ $pyVersion != "" ]] && echo "using Python $pyVersion")"
+    fi    
+    
+    [[ $? != 0 ]] && echo -e "\nOops, something went wrong! I could not setup your Python environment."
+
+    # and setup a trigger if wanted
+    if [[ $key == "y" || $key == "" ]]; then
+
+        command pyenv local "$pyEnvName"
+        [[ $? == 0 ]] && echo -e "\nI successfully created a Python environment trigger for your working directory"
+        [[ $? != 0 ]] && echo -e "\nOops, something went wrong! I could not setup your Python environment trigger."
+    fi
+fi
